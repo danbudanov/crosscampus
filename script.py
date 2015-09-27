@@ -1,17 +1,19 @@
 from urllib2 import Request, urlopen
 from flask import Flask, request, session, g, redirect, url_for, \
      abort, render_template, flash
+from flask_restful import Resource, Api
 import json
 import time
 
 
 app = Flask(__name__)
-app.config.from_object(__name__)
+api = Api(app)
+#app.config.from_object(__name__)
 
 
 app.debug=True
 
-@app.route("/")
+@app.route("/", methods=['POST'])
 def index():
     request = Request("http://m.gatech.edu/w/buses/c/api/stop")
     data = json.load(urlopen(request))
@@ -40,8 +42,8 @@ def index():
                                           'plng':str(bus['plng'])
                                           }})
 
-    ETAo = {"BusID1":5, "BusID2":11, "BusID3":13}
-    ETAf = {"BusID1":20, "BusID2":27, "BusID3":34}
+    ETAo = {"441":5, "438":11, "436":13}
+    ETAf = {"441":20, "438":27, "436":34}
 
     lat_user = 33.7759698
     lon_user = -84.3953635
@@ -116,21 +118,82 @@ def index():
             continue
 
     final = ETAf[bus] + int(duration["duration_S2F"])
-    print final
+    if int(final) >= int(duration["duration_U2F"]):
+        booln = True
+        final_ETA = int(duration["duration_U2F"])
+        
+    else:
+        booln = False
+        final_ETA = int(final)
+
+    darksky_request = Request("https://api.forecast.io/forecast/a9c08334fce0685504bb9c5658168ac3/"+str(lat_user)+","+str(lon_user)+"/")
+    data = json.load(urlopen(darksky_request))
+
+    weather_info = {
+    "precip":data["currently"]["precipIntensity"],
+    "icon":data["currently"]["icon"],
+    "temp":data["currently"]["temperature"]
+    }
+
+    if int(weather_info["precip"]) > .005:
+        booln2 = True
+
+    else:
+        booln2 = False
+        
+
+    #print final
 
 
+    if int(final_ETA) <= 5:
+        cals = "25-40 calories"
+
+    elif 5 < int(final_ETA) <= 10:
+        cals = "50 - 80 calories"
+
+    elif 10 < int(final_ETA) <= 15:
+        cals = "75 - 120 calories"
+
+    elif 15 < int(final_ETA) <=20:
+        cals = "100 - 150 calories"
+
+    
             
-            
-    context = {"final":str(final),
-               "stop_data":stop_info,
-               "bus_data":bus_info
+    context = {"best_travel_time":str(final_ETA),
+               "you_should_walk_over_bus":booln,
+               "walk_travel_time":duration["duration_U2F"],
+               "bus_travel_time":str(final),
+               "bus_id":bus,
+               "bus_color": bus_info[str(bus)]["route"],
+               "is_raining":booln2,
+               "weather_icon":weather_info["icon"],
+               "current_temp":weather_info["temp"],
+               "calories_burned":cals
                }
 
-    return render_template("index.html", final=final)
+    return context
 
+@app.route('/echo', methods = ['GET', 'POST', 'PATCH', 'PUT'])
+def api_echo():
+    if request.method == 'GET':
+        return "ECHO: GET\n"
+    elif request.method == 'POST':
+        return "ECHO: POST\n"
+    elif request.method == 'PATCH':
+        return "ECHO: PACTH\n"
+    elif request.method == 'PUT':
+        return "ECHO: PUT\n"
+    else:
+        return "NONE"
+
+
+class GTBus(Resource):
+    def get(self):
+        return index()  #we should put the 2 coord pairs as args for index
+
+api.add_resource(GTBus, '/')
 
 
 
 if __name__ == '__main__':
     app.run(debug=True, port=8080)
-
